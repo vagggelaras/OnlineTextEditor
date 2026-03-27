@@ -1,0 +1,8 @@
+{
+  "name": "online-text-editor",
+  "private": true,
+  "workspaces": [
+    "frontend",
+    "backend"
+  ]
+}

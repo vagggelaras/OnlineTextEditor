@@ -1,0 +1,91 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String
+  avatarUrl String?
+  createdAt DateTime @default(now())
+
+  documents Document[]
+  folders   Folder[]
+  shares    SharedDocument[]
+}
+
+model Folder {
+  id        String  @id @default(cuid())
+  name      String
+  parentId  String?
+  parent    Folder? @relation("FolderNesting", fields: [parentId], references: [id])
+  children  Folder[] @relation("FolderNesting")
+  sortOrder Int     @default(0)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  documents Document[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Document {
+  id        String @id @default(cuid())
+  title     String @default("Untitled Document")
+  content   Json?
+  yjsState  Bytes?
+  sortOrder Int    @default(0)
+
+  folderId String?
+  folder   Folder? @relation(fields: [folderId], references: [id])
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  versions Version[]
+  shares   SharedDocument[]
+  charts   Chart[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Version {
+  id         String   @id @default(cuid())
+  documentId String
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  content    Json
+  yjsState   Bytes?
+  label      String?
+  createdAt  DateTime @default(now())
+  createdBy  String
+}
+
+model SharedDocument {
+  id         String   @id @default(cuid())
+  documentId String
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id])
+  shareToken String   @unique
+  permission String   @default("view")
+  createdAt  DateTime @default(now())
+}
+
+model Chart {
+  id         String   @id @default(cuid())
+  documentId String
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  type       String
+  config     Json
+  data       Json
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}

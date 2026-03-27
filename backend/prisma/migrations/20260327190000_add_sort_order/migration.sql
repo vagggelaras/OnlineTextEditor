@@ -1,0 +1,5 @@
+-- AlterTable
+ALTER TABLE "Document" ADD COLUMN "sortOrder" INTEGER NOT NULL DEFAULT 0;
+
+-- AlterTable
+ALTER TABLE "Folder" ADD COLUMN "sortOrder" INTEGER NOT NULL DEFAULT 0;

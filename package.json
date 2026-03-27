@@ -8,7 +8,7 @@
   "scripts": {
     "build": "npm run build:frontend && npm run build:backend",
     "build:frontend": "cd frontend && npx vite build",
-    "build:backend": "cd backend && npx prisma generate && npx tsc",
+    "build:backend": "cd backend && npx prisma generate && npx prisma migrate deploy && npx tsc",
     "start": "cd backend && node dist/index.js"
   }
 }

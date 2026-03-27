@@ -1,5 +1,6 @@
 import "dotenv/config";
 import http from "node:http";
+import path from "node:path";
 import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
@@ -42,6 +43,13 @@ app.get("/api/health", (_req, res) => {
 
 // Error handling
 app.use(errorHandler);
+
+// In production, serve the frontend build
+const frontendDist = path.join(__dirname, "../../frontend/dist");
+app.use(express.static(frontendDist));
+app.get("*", (_req, res) => {
+  res.sendFile(path.join(frontendDist, "index.html"));
+});
 
 // Create HTTP server
 const server = http.createServer(app);

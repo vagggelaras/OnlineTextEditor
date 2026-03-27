@@ -105,10 +105,12 @@ export function Editor({ document: doc }: EditorProps) {
     let destroyed = false
     let prov: HocuspocusProvider | null = null
 
-    const wsUrl = import.meta.env.VITE_WS_URL || "ws://localhost:3001"
+    const wsUrl = import.meta.env.VITE_WS_URL || (import.meta.env.PROD
+      ? `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}`
+      : "ws://localhost:3001")
 
     // Fetch a short-lived WS token, then connect
-    const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:3001/api"
+    const apiUrl = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? "/api" : "http://localhost:3001/api")
     fetch(`${apiUrl}/auth/ws-token`, { credentials: "include" })
       .then((res) => res.json())
       .then(({ token }) => {

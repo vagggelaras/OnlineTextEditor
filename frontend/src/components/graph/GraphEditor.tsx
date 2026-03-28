@@ -9,13 +9,12 @@ import {
   useNodesState,
   useEdgesState,
   useReactFlow,
+  useViewport,
   ReactFlowProvider,
   type Connection,
   type Node,
   type Edge,
   type NodeTypes,
-  type OnConnectStart,
-  type OnConnectEnd,
   MarkerType,
   Position,
   Handle,
@@ -149,7 +148,7 @@ const nodeTypes: NodeTypes = {
 const COLORS = ["#1f2937", "#d1d5db", "#3b82f6", "#ef4444", "#22c55e", "#f59e0b", "#8b5cf6", "#ec4899", "#06b6d4"]
 const STROKE_WIDTHS = [2, 4, 6, 8]
 
-type Tool = "select" | "draw" | "text"
+type Tool = "select" | "draw" | "text" | "rect" | "circle" | "diamond"
 
 interface DrawPath {
   id: string
@@ -174,10 +173,17 @@ function GraphEditorInner({ documentId }: GraphEditorProps) {
   const [showColors, setShowColors] = useState(false)
   const [showStroke, setShowStroke] = useState(false)
   const [paths, setPaths] = useState<DrawPath[]>([])
-  const [isDrawing, setIsDrawing] = useState(false)
+  const isDrawingRef = useRef(false)
   const currentPath = useRef<string[]>([])
   const svgRef = useRef<SVGSVGElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const toolbarRef = useRef<HTMLDivElement>(null)
+  const drawColorRef = useRef(drawColor)
+  const drawWidthRef = useRef(drawWidth)
+  drawColorRef.current = drawColor
+  drawWidthRef.current = drawWidth
   const { screenToFlowPosition } = useReactFlow()
+  const { x: vpX, y: vpY, zoom: vpZoom } = useViewport()
 
   // --- Connections ---
   const onConnect = useCallback(
@@ -204,46 +210,28 @@ function GraphEditorInner({ documentId }: GraphEditorProps) {
     [setNodes]
   )
 
-  // --- Add nodes ---
-  const addNode = useCallback(
-    (type: "rectNode" | "circleNode" | "diamondNode" | "plainText") => {
-      const id = `node_${++nodeId}`
-      const defaults: Record<string, { label: string; fontSize?: number }> = {
-        rectNode: { label: "New Node" },
-        circleNode: { label: "State" },
-        diamondNode: { label: "Condition" },
-        plainText: { label: "Text", fontSize: 16 },
-      }
-      const newNode: Node = {
-        id,
-        type,
-        position: { x: 250 + Math.random() * 200, y: 150 + Math.random() * 200 },
-        data: {
-          ...defaults[type],
-          color: type === "plainText" ? "#1f2937" : "#d1d5db",
-          onLabelChange: (label: string) => updateNodeLabel(id, label),
-        },
-      }
-      setNodes((nds) => [...nds, newNode])
-      setTool("select")
-    },
-    [setNodes, updateNodeLabel]
-  )
+  // --- Place node on canvas click (for shape/text tools) ---
+  const placementTools: Record<string, { nodeType: string; label: string; fontSize?: number }> = {
+    rect: { nodeType: "rectNode", label: "New Node" },
+    circle: { nodeType: "circleNode", label: "State" },
+    diamond: { nodeType: "diamondNode", label: "Condition" },
+    text: { nodeType: "plainText", label: "Text", fontSize: 16 },
+  }
 
-  // --- Add text node on canvas click when text tool active ---
   const handlePaneClick = useCallback(
     (event: React.MouseEvent) => {
-      if (tool !== "text") return
+      const placement = placementTools[tool]
+      if (!placement) return
       const position = screenToFlowPosition({ x: event.clientX, y: event.clientY })
       const id = `node_${++nodeId}`
       const newNode: Node = {
         id,
-        type: "plainText",
+        type: placement.nodeType,
         position,
         data: {
-          label: "Text",
-          color: drawColor,
-          fontSize: 16,
+          label: placement.label,
+          fontSize: placement.fontSize,
+          color: placement.nodeType === "plainText" ? drawColor : "#d1d5db",
           onLabelChange: (label: string) => updateNodeLabel(id, label),
         },
       }
@@ -253,51 +241,60 @@ function GraphEditorInner({ documentId }: GraphEditorProps) {
     [tool, screenToFlowPosition, setNodes, updateNodeLabel, drawColor]
   )
 
-  // --- Free drawing ---
-  const handleDrawStart = useCallback(
-    (e: React.MouseEvent) => {
-      if (tool !== "draw") return
+  // --- Free drawing via native capture-phase listeners ---
+  // Left-click draws, middle-click passes through to ReactFlow for panning
+  useEffect(() => {
+    if (tool !== "draw") return
+    const container = containerRef.current
+    if (!container) return
+
+    const onMouseDown = (e: MouseEvent) => {
+      if (e.button !== 0) return // only left-click draws; middle-click goes to ReactFlow
+      if (toolbarRef.current?.contains(e.target as HTMLElement)) return // don't draw on toolbar
+      e.stopPropagation()
       e.preventDefault()
       const pos = screenToFlowPosition({ x: e.clientX, y: e.clientY })
       currentPath.current = [`M ${pos.x} ${pos.y}`]
-      setIsDrawing(true)
-    },
-    [tool, screenToFlowPosition]
-  )
+      isDrawingRef.current = true
+    }
 
-  const handleDrawMove = useCallback(
-    (e: React.MouseEvent) => {
-      if (!isDrawing || tool !== "draw") return
+    const onMouseMove = (e: MouseEvent) => {
+      if (!isDrawingRef.current) return
       const pos = screenToFlowPosition({ x: e.clientX, y: e.clientY })
       currentPath.current.push(`L ${pos.x} ${pos.y}`)
-      // Update SVG in real-time via ref for performance
       const svgPath = svgRef.current?.querySelector("#drawing-path") as SVGPathElement | null
-      if (svgPath) {
-        svgPath.setAttribute("d", currentPath.current.join(" "))
-      }
-    },
-    [isDrawing, tool, screenToFlowPosition]
-  )
-
-  const handleDrawEnd = useCallback(() => {
-    if (!isDrawing || tool !== "draw") return
-    setIsDrawing(false)
-    if (currentPath.current.length > 1) {
-      setPaths((prev) => [
-        ...prev,
-        {
-          id: `path_${++pathId}`,
-          d: currentPath.current.join(" "),
-          color: drawColor,
-          width: drawWidth,
-        },
-      ])
+      if (svgPath) svgPath.setAttribute("d", currentPath.current.join(" "))
     }
-    currentPath.current = []
-    // Clear the live drawing path
-    const svgPath = svgRef.current?.querySelector("#drawing-path") as SVGPathElement | null
-    if (svgPath) svgPath.setAttribute("d", "")
-  }, [isDrawing, tool, drawColor, drawWidth])
+
+    const onMouseUp = () => {
+      if (!isDrawingRef.current) return
+      isDrawingRef.current = false
+      if (currentPath.current.length > 1) {
+        setPaths((prev) => [
+          ...prev,
+          {
+            id: `path_${++pathId}`,
+            d: currentPath.current.join(" "),
+            color: drawColorRef.current,
+            width: drawWidthRef.current,
+          },
+        ])
+      }
+      currentPath.current = []
+      const svgPath = svgRef.current?.querySelector("#drawing-path") as SVGPathElement | null
+      if (svgPath) svgPath.setAttribute("d", "")
+    }
+
+    container.addEventListener("mousedown", onMouseDown, true) // capture phase
+    window.addEventListener("mousemove", onMouseMove)
+    window.addEventListener("mouseup", onMouseUp)
+
+    return () => {
+      container.removeEventListener("mousedown", onMouseDown, true)
+      window.removeEventListener("mousemove", onMouseMove)
+      window.removeEventListener("mouseup", onMouseUp)
+    }
+  }, [tool, screenToFlowPosition])
 
   // --- Delete ---
   const deleteSelected = useCallback(() => {
@@ -324,6 +321,25 @@ function GraphEditorInner({ documentId }: GraphEditorProps) {
     [setNodes]
   )
 
+  // --- Keyboard shortcuts ---
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      // Skip if user is typing in an input or contentEditable
+      const tag = (e.target as HTMLElement).tagName
+      if (tag === "INPUT" || tag === "TEXTAREA" || (e.target as HTMLElement).isContentEditable) return
+      switch (e.key) {
+        case "1": setTool("select"); break
+        case "2": setTool("draw"); break
+        case "3": setTool("text"); break
+        case "4": setTool("rect"); break
+        case "5": setTool("circle"); break
+        case "6": setTool("diamond"); break
+      }
+    }
+    document.addEventListener("keydown", handler)
+    return () => document.removeEventListener("keydown", handler)
+  }, [])
+
   // Close dropdowns on outside click
   useEffect(() => {
     const handler = () => { setShowColors(false); setShowStroke(false) }
@@ -334,24 +350,27 @@ function GraphEditorInner({ documentId }: GraphEditorProps) {
   }, [showColors, showStroke])
 
   const isDrawMode = tool === "draw"
-  const isTextMode = tool === "text"
+  const isPlacementMode = tool === "text" || tool === "rect" || tool === "circle" || tool === "diamond"
 
   return (
-    <div className="h-full w-full relative">
+    <div
+      ref={containerRef}
+      className={`h-full w-full relative ${isDrawMode ? "cursor-crosshair" : isPlacementMode ? "cursor-crosshair" : ""}`}
+    >
       <ReactFlow
         nodes={nodes.map((n) => ({
           ...n,
           data: { ...n.data, onLabelChange: (label: string) => updateNodeLabel(n.id, label) },
         }))}
         edges={edges}
-        onNodesChange={tool === "select" ? onNodesChange : undefined}
-        onEdgesChange={tool === "select" ? onEdgesChange : undefined}
-        onConnect={tool === "select" ? onConnect : undefined}
+        onNodesChange={!isDrawMode && !isPlacementMode ? onNodesChange : undefined}
+        onEdgesChange={!isDrawMode && !isPlacementMode ? onEdgesChange : undefined}
+        onConnect={!isDrawMode && !isPlacementMode ? onConnect : undefined}
         nodeTypes={nodeTypes}
         fitView
         deleteKeyCode={["Backspace", "Delete"]}
-        panOnDrag={!isDrawMode}
-        zoomOnScroll={!isDrawMode}
+        panOnDrag={isDrawMode || isPlacementMode ? [1] : [0, 1]}
+        zoomOnScroll
         nodesDraggable={tool === "select"}
         nodesConnectable={tool === "select"}
         elementsSelectable={tool === "select"}
@@ -361,178 +380,6 @@ function GraphEditorInner({ documentId }: GraphEditorProps) {
         <Background gap={20} size={1} />
         <Controls />
         <MiniMap nodeStrokeWidth={3} className="!bg-white !border-gray-200" />
-
-        {/* Drawing SVG overlay — rendered inside React Flow's viewport so it transforms with zoom/pan */}
-        <svg
-          ref={svgRef}
-          className="absolute inset-0 w-full h-full pointer-events-none"
-          style={{ zIndex: 4 }}
-        >
-          {paths.map((p) => (
-            <path
-              key={p.id}
-              d={p.d}
-              fill="none"
-              stroke={p.color}
-              strokeWidth={p.width}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          ))}
-          {/* Live drawing path */}
-          <path
-            id="drawing-path"
-            fill="none"
-            stroke={drawColor}
-            strokeWidth={drawWidth}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-
-        {/* Transparent overlay to capture draw/text events */}
-        {(isDrawMode || isTextMode) && (
-          <div
-            className={`absolute inset-0 ${isDrawMode ? "cursor-crosshair" : "cursor-text"}`}
-            style={{ zIndex: 5 }}
-            onMouseDown={isDrawMode ? handleDrawStart : undefined}
-            onMouseMove={isDrawMode ? handleDrawMove : undefined}
-            onMouseUp={isDrawMode ? handleDrawEnd : undefined}
-            onMouseLeave={isDrawMode ? handleDrawEnd : undefined}
-            onClick={isTextMode ? handlePaneClick : undefined}
-          />
-        )}
-
-        {/* Toolbar */}
-        <Panel position="top-left">
-          <div className="flex items-center gap-1 bg-white rounded-lg shadow-md border border-gray-200 p-1.5">
-            {/* Tool selection */}
-            <Button
-              variant={tool === "select" ? "secondary" : "ghost"}
-              size="sm"
-              onClick={() => setTool("select")}
-              className="h-8 w-8 p-0"
-              title="Select (V)"
-            >
-              <MousePointer2 className="h-3.5 w-3.5" />
-            </Button>
-            <Button
-              variant={tool === "draw" ? "secondary" : "ghost"}
-              size="sm"
-              onClick={() => setTool("draw")}
-              className="h-8 w-8 p-0"
-              title="Draw (D)"
-            >
-              <Pencil className="h-3.5 w-3.5" />
-            </Button>
-            <Button
-              variant={tool === "text" ? "secondary" : "ghost"}
-              size="sm"
-              onClick={() => setTool("text")}
-              className="h-8 w-8 p-0"
-              title="Text (T)"
-            >
-              <Type className="h-3.5 w-3.5" />
-            </Button>
-
-            <div className="w-px h-5 bg-gray-200 mx-1" />
-
-            {/* Shapes */}
-            <Button variant="ghost" size="sm" onClick={() => addNode("rectNode")} className="h-8 gap-1.5 text-xs" title="Rectangle">
-              <Square className="h-3.5 w-3.5" />
-            </Button>
-            <Button variant="ghost" size="sm" onClick={() => addNode("circleNode")} className="h-8 gap-1.5 text-xs" title="Circle">
-              <Circle className="h-3.5 w-3.5" />
-            </Button>
-            <Button variant="ghost" size="sm" onClick={() => addNode("diamondNode")} className="h-8 gap-1.5 text-xs" title="Diamond">
-              <Diamond className="h-3.5 w-3.5" />
-            </Button>
-
-            <div className="w-px h-5 bg-gray-200 mx-1" />
-
-            {/* Color picker */}
-            <div className="relative" onMouseDown={(e) => e.stopPropagation()}>
-              <button
-                onClick={() => { setShowColors(!showColors); setShowStroke(false) }}
-                className="h-8 w-8 flex items-center justify-center rounded-md hover:bg-accent"
-                title="Color"
-              >
-                <div className="w-4 h-4 rounded-full border border-gray-300" style={{ backgroundColor: drawColor }} />
-              </button>
-              {showColors && (
-                <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg p-2 z-50">
-                  <div className="grid grid-cols-3 gap-1.5">
-                    {COLORS.map((color) => (
-                      <button
-                        key={color}
-                        className={`w-7 h-7 rounded-full border-2 hover:scale-110 transition-transform ${
-                          drawColor === color ? "border-blue-500" : "border-white"
-                        }`}
-                        style={{ backgroundColor: color }}
-                        onClick={() => changeSelectedColor(color)}
-                      />
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Stroke width (for drawing) */}
-            <div className="relative" onMouseDown={(e) => e.stopPropagation()}>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => { setShowStroke(!showStroke); setShowColors(false) }}
-                className="h-8 w-8 p-0"
-                title="Stroke width"
-              >
-                <Minus className="h-3.5 w-3.5" strokeWidth={drawWidth} />
-              </Button>
-              {showStroke && (
-                <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg p-2 z-50">
-                  <div className="flex flex-col gap-1">
-                    {STROKE_WIDTHS.map((w) => (
-                      <button
-                        key={w}
-                        className={`flex items-center gap-2 px-2 py-1 rounded hover:bg-gray-100 ${
-                          drawWidth === w ? "bg-gray-100" : ""
-                        }`}
-                        onClick={() => { setDrawWidth(w); setShowStroke(false) }}
-                      >
-                        <div className="w-8 rounded-full bg-gray-800" style={{ height: `${w}px` }} />
-                        <span className="text-xs text-muted-foreground">{w}px</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="w-px h-5 bg-gray-200 mx-1" />
-
-            {/* Delete + Clear drawing */}
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={deleteSelected}
-              className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
-              title="Delete selected"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </Button>
-            {paths.length > 0 && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={clearDrawing}
-                className="h-8 text-xs text-muted-foreground"
-                title="Clear all drawings"
-              >
-                Clear drawing
-              </Button>
-            )}
-          </div>
-        </Panel>
 
         {/* Instructions */}
         {nodes.length === 0 && paths.length === 0 && (
@@ -546,6 +393,185 @@ function GraphEditorInner({ documentId }: GraphEditorProps) {
           </Panel>
         )}
       </ReactFlow>
+
+      {/* Drawing SVG overlay — outside ReactFlow, uses viewport transform to stay in sync */}
+      <svg
+        ref={svgRef}
+        className="absolute inset-0 w-full h-full pointer-events-none overflow-visible"
+        style={{ zIndex: 10 }}
+      >
+        <g transform={`translate(${vpX}, ${vpY}) scale(${vpZoom})`}>
+          {paths.map((p) => (
+            <path
+              key={p.id}
+              d={p.d}
+              fill="none"
+              stroke={p.color}
+              strokeWidth={p.width / vpZoom}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          ))}
+          {/* Live drawing path */}
+          <path
+            id="drawing-path"
+            fill="none"
+            stroke={drawColor}
+            strokeWidth={drawWidth / vpZoom}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </g>
+      </svg>
+
+      {/* Toolbar */}
+      <div ref={toolbarRef} className="absolute top-2 left-2" style={{ zIndex: 20 }}>
+        <div className="flex items-center gap-1 bg-white rounded-lg shadow-md border border-gray-200 p-1.5">
+          {/* Tool selection */}
+          <Button
+            variant={tool === "select" ? "secondary" : "ghost"}
+            size="sm"
+            onClick={() => setTool("select")}
+            className="h-8 w-8 p-0"
+            title="Select (1)"
+          >
+            <MousePointer2 className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            variant={tool === "draw" ? "secondary" : "ghost"}
+            size="sm"
+            onClick={() => setTool("draw")}
+            className="h-8 w-8 p-0"
+            title="Draw (2)"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            variant={tool === "text" ? "secondary" : "ghost"}
+            size="sm"
+            onClick={() => setTool("text")}
+            className="h-8 w-8 p-0"
+            title="Text (3)"
+          >
+            <Type className="h-3.5 w-3.5" />
+          </Button>
+
+          <div className="w-px h-5 bg-gray-200 mx-1" />
+
+          {/* Shapes — click canvas to place */}
+          <Button
+            variant={tool === "rect" ? "secondary" : "ghost"}
+            size="sm"
+            onClick={() => setTool("rect")}
+            className="h-8 gap-1.5 text-xs"
+            title="Rectangle (4)"
+          >
+            <Square className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            variant={tool === "circle" ? "secondary" : "ghost"}
+            size="sm"
+            onClick={() => setTool("circle")}
+            className="h-8 gap-1.5 text-xs"
+            title="Circle (5)"
+          >
+            <Circle className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            variant={tool === "diamond" ? "secondary" : "ghost"}
+            size="sm"
+            onClick={() => setTool("diamond")}
+            className="h-8 gap-1.5 text-xs"
+            title="Diamond (6)"
+          >
+            <Diamond className="h-3.5 w-3.5" />
+          </Button>
+
+          <div className="w-px h-5 bg-gray-200 mx-1" />
+
+          {/* Color picker */}
+          <div className="relative" onMouseDown={(e) => e.stopPropagation()}>
+            <button
+              onClick={() => { setShowColors(!showColors); setShowStroke(false) }}
+              className="h-8 w-8 flex items-center justify-center rounded-md hover:bg-accent"
+              title="Color"
+            >
+              <div className="w-4 h-4 rounded-full border border-gray-300" style={{ backgroundColor: drawColor }} />
+            </button>
+            {showColors && (
+              <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg p-2 z-50">
+                <div className="grid grid-cols-3 gap-1.5">
+                  {COLORS.map((color) => (
+                    <button
+                      key={color}
+                      className={`w-7 h-7 rounded-full border-2 hover:scale-110 transition-transform ${
+                        drawColor === color ? "border-blue-500" : "border-white"
+                      }`}
+                      style={{ backgroundColor: color }}
+                      onClick={() => changeSelectedColor(color)}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Stroke width (for drawing) */}
+          <div className="relative" onMouseDown={(e) => e.stopPropagation()}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => { setShowStroke(!showStroke); setShowColors(false) }}
+              className="h-8 w-8 p-0"
+              title="Stroke width"
+            >
+              <Minus className="h-3.5 w-3.5" strokeWidth={drawWidth} />
+            </Button>
+            {showStroke && (
+              <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg p-2 z-50">
+                <div className="flex flex-col gap-1">
+                  {STROKE_WIDTHS.map((w) => (
+                    <button
+                      key={w}
+                      className={`flex items-center gap-2 px-2 py-1 rounded hover:bg-gray-100 ${
+                        drawWidth === w ? "bg-gray-100" : ""
+                      }`}
+                      onClick={() => { setDrawWidth(w); setShowStroke(false) }}
+                    >
+                      <div className="w-8 rounded-full bg-gray-800" style={{ height: `${w}px` }} />
+                      <span className="text-xs text-muted-foreground">{w}px</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="w-px h-5 bg-gray-200 mx-1" />
+
+          {/* Delete + Clear drawing */}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={deleteSelected}
+            className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
+            title="Delete selected"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </Button>
+          {paths.length > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={clearDrawing}
+              className="h-8 text-xs text-muted-foreground"
+              title="Clear all drawings"
+            >
+              Clear drawing
+            </Button>
+          )}
+        </div>
+      </div>
     </div>
   )
 }

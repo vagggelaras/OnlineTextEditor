@@ -1,4 +1,6 @@
 import crypto from "node:crypto";
+import * as Y from "yjs";
+import { yDocToProsemirrorJSON } from "y-prosemirror";
 import { prisma } from "../config/database";
 import { NotFoundError, ForbiddenError } from "../utils/errors";
 
@@ -78,6 +80,15 @@ export async function deleteShare(id: string, documentId: string, userId: string
   await prisma.sharedDocument.delete({ where: { id } });
 }
 
+export async function getShareByToken(token: string) {
+  const share = await prisma.sharedDocument.findUnique({
+    where: { shareToken: token },
+    select: { id: true, documentId: true, permission: true },
+  });
+  if (!share) throw new NotFoundError("Shared document not found");
+  return share;
+}
+
 export async function getDocumentByShareToken(token: string) {
   const share = await prisma.sharedDocument.findUnique({
     where: { shareToken: token },
@@ -87,6 +98,7 @@ export async function getDocumentByShareToken(token: string) {
           id: true,
           title: true,
           content: true,
+          yjsState: true,
           createdAt: true,
           updatedAt: true,
         },
@@ -96,8 +108,28 @@ export async function getDocumentByShareToken(token: string) {
 
   if (!share) throw new NotFoundError("Shared document not found");
 
+  // Decode Yjs state to TipTap JSON if available (Hocuspocus stores
+  // the live document in yjsState, not in the content JSON field)
+  let content = share.document.content;
+  if (share.document.yjsState) {
+    try {
+      const ydoc = new Y.Doc();
+      Y.applyUpdate(ydoc, new Uint8Array(share.document.yjsState));
+      content = yDocToProsemirrorJSON(ydoc, "default");
+      ydoc.destroy();
+    } catch {
+      // Fall back to stored content if Yjs decoding fails
+    }
+  }
+
   return {
-    document: share.document,
+    document: {
+      id: share.document.id,
+      title: share.document.title,
+      content,
+      createdAt: share.document.createdAt,
+      updatedAt: share.document.updatedAt,
+    },
     permission: share.permission,
   };
 }

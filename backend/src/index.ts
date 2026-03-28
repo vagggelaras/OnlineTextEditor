@@ -16,7 +16,7 @@ import chartRoutes from "./routes/charts.routes";
 import shareRoutes from "./routes/shares.routes";
 import versionRoutes from "./routes/versions.routes";
 import { asyncHandler } from "./middleware/asyncHandler";
-import { getSharedDocument } from "./controllers/shares.controller";
+import { getSharedDocument, getSharedWsToken } from "./controllers/shares.controller";
 
 const app = express();
 
@@ -33,8 +33,9 @@ app.use("/api/documents/:documentId/charts", chartRoutes);
 app.use("/api/documents/:documentId/shares", shareRoutes);
 app.use("/api/documents/:documentId/versions", versionRoutes);
 
-// Public route: access shared document by token (no auth required)
+// Public routes: access shared document by token (no auth required)
 app.get("/api/shared/:token", asyncHandler(getSharedDocument));
+app.get("/api/shared/:token/ws-token", asyncHandler(getSharedWsToken));
 
 // Health check
 app.get("/api/health", (_req, res) => {

@@ -24,8 +24,12 @@ export const hocuspocus = new Hocuspocus({
     }
 
     try {
-      const payload = jwt.verify(token, env.JWT_SECRET) as AuthPayload;
-      return { user: payload };
+      const payload = jwt.verify(token, env.JWT_SECRET) as Record<string, unknown>;
+      // Accept both regular user tokens and shared-edit tokens
+      if (payload.role === "shared-editor") {
+        return { user: { userId: "shared", email: "shared-user" } };
+      }
+      return { user: payload as unknown as AuthPayload };
     } catch {
       throw new Error("Invalid or expired token");
     }

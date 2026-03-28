@@ -6,9 +6,12 @@ import { DashboardPage } from "@/pages/DashboardPage"
 import { LoginPage } from "@/pages/LoginPage"
 import { RegisterPage } from "@/pages/RegisterPage"
 import { SharedPage } from "@/pages/SharedPage"
+import { Toaster } from "@/components/ui/toast"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 
 function App() {
   return (
+    <>
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
@@ -29,6 +32,9 @@ function App() {
         />
       </Routes>
     </BrowserRouter>
+    <Toaster />
+    <ConfirmDialog />
+  </>
   )
 }
 

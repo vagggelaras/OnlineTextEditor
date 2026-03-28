@@ -4,6 +4,8 @@ import { ChartPreview } from "./ChartPreview"
 import { ChartEditor } from "./ChartEditor"
 import { Button } from "@/components/ui/button"
 import { Plus, Pencil, Trash2, X, BarChart3 } from "lucide-react"
+import { toast } from "@/stores/toastStore"
+import { confirmDialog } from "@/stores/confirmStore"
 
 interface ChartPanelProps {
   documentId: string
@@ -50,7 +52,10 @@ export function ChartPanel({ documentId, onClose }: ChartPanelProps) {
             variant="ghost"
             size="sm"
             onClick={async () => {
+              const ok = await confirmDialog({ title: "Delete chart", description: "This chart will be permanently deleted." })
+              if (!ok) return
               await deleteChart(documentId, selectedChart.id)
+              toast({ title: "Chart deleted", variant: "success" })
             }}
             className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
           >
@@ -95,8 +100,11 @@ export function ChartPanel({ documentId, onClose }: ChartPanelProps) {
           <p className="text-xs text-muted-foreground text-center py-8">Loading...</p>
         ) : charts.length === 0 ? (
           <div className="text-center py-12 space-y-3">
-            <BarChart3 className="h-10 w-10 text-muted-foreground/40 mx-auto" />
-            <p className="text-sm text-muted-foreground">No charts yet</p>
+            <BarChart3 className="h-10 w-10 text-muted-foreground/30 mx-auto" />
+            <p className="text-sm text-muted-foreground font-medium">No charts yet</p>
+            <p className="text-xs text-muted-foreground/60 max-w-[200px] mx-auto">
+              Visualize your data with bar, line, pie, and more chart types.
+            </p>
             <Button
               size="sm"
               onClick={() => {

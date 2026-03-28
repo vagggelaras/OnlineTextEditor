@@ -3,6 +3,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { api } from "@/lib/api"
 import { Copy, Check, Link, Trash2, X, Globe } from "lucide-react"
+import { toast } from "@/stores/toastStore"
+import { confirmDialog } from "@/stores/confirmStore"
 
 interface Share {
   id: string
@@ -40,23 +42,38 @@ export function ShareDialog({ documentId, onClose }: ShareDialogProps) {
         permission,
       })
       setShares([share, ...shares])
+      toast({ title: `${permission === "edit" ? "Edit" : "View-only"} link created`, variant: "success" })
+    } catch (err) {
+      toast({ title: "Failed to create share link", description: (err as Error).message, variant: "destructive" })
     } finally {
       setCreating(false)
     }
   }
 
   const deleteShare = async (id: string) => {
-    await api.delete(`/documents/${documentId}/shares/${id}`)
-    setShares(shares.filter((s) => s.id !== id))
+    const ok = await confirmDialog({ title: "Delete share link", description: "Anyone with this link will lose access." })
+    if (!ok) return
+    try {
+      await api.delete(`/documents/${documentId}/shares/${id}`)
+      setShares(shares.filter((s) => s.id !== id))
+      toast({ title: "Share link deleted", variant: "success" })
+    } catch (err) {
+      toast({ title: "Failed to delete share link", description: (err as Error).message, variant: "destructive" })
+    }
   }
 
   const togglePermission = async (share: Share) => {
     const newPerm = share.permission === "view" ? "edit" : "view"
-    const { share: updated } = await api.patch<{ share: Share }>(
-      `/documents/${documentId}/shares/${share.id}`,
-      { permission: newPerm }
-    )
-    setShares(shares.map((s) => (s.id === updated.id ? updated : s)))
+    try {
+      const { share: updated } = await api.patch<{ share: Share }>(
+        `/documents/${documentId}/shares/${share.id}`,
+        { permission: newPerm }
+      )
+      setShares(shares.map((s) => (s.id === updated.id ? updated : s)))
+      toast({ title: `Permission changed to ${newPerm}`, variant: "success" })
+    } catch (err) {
+      toast({ title: "Failed to update permission", description: (err as Error).message, variant: "destructive" })
+    }
   }
 
   const getShareUrl = (token: string) => {

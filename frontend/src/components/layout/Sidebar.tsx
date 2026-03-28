@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { useNavigate, useLocation } from "react-router-dom"
-import { Plus, Home, FolderPlus, LogOut } from "lucide-react"
+import { Plus, Home, FolderPlus, LogOut, Search, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { FileTree } from "@/components/files/FileTree"
 import { useDocumentStore } from "@/stores/documentStore"
@@ -17,6 +17,7 @@ export function Sidebar({ isOpen }: SidebarProps) {
   const { logout } = useAuthStore()
   const [creatingFolder, setCreatingFolder] = useState(false)
   const [folderName, setFolderName] = useState("")
+  const [searchQuery, setSearchQuery] = useState("")
 
   if (!isOpen) return null
 
@@ -95,7 +96,26 @@ export function Sidebar({ isOpen }: SidebarProps) {
                 Documents
               </span>
             </div>
-            <FileTree onOpenDocument={handleOpenDoc} activeDocId={currentDoc?.id} />
+            <div className="px-2 mb-2">
+              <div className="relative">
+                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
+                <input
+                  className="w-full h-7 text-xs pl-7 pr-7 rounded-md border border-input bg-background outline-none focus:ring-1 focus:ring-ring"
+                  placeholder="Filter documents..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery("")}
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
+            </div>
+            <FileTree onOpenDocument={handleOpenDoc} activeDocId={currentDoc?.id} searchQuery={searchQuery} />
           </div>
         </div>
       </nav>

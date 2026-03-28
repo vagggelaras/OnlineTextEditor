@@ -44,9 +44,12 @@ export function DashboardPage() {
             <p className="text-muted-foreground text-sm">Loading...</p>
           ) : recentDocs.length === 0 ? (
             <div className="text-center py-16">
-              <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <p className="text-muted-foreground mb-4">No documents yet</p>
-              <Button onClick={handleNewDoc} variant="outline" className="gap-2">
+              <FileText className="h-12 w-12 text-muted-foreground/40 mx-auto mb-4" />
+              <h3 className="font-medium mb-1">No documents yet</h3>
+              <p className="text-sm text-muted-foreground mb-6 max-w-sm mx-auto">
+                Create documents, organize them into folders, and collaborate with others in real-time.
+              </p>
+              <Button onClick={handleNewDoc} className="gap-2">
                 <Plus className="h-4 w-4" />
                 Create your first document
               </Button>
@@ -62,7 +65,7 @@ export function DashboardPage() {
                   <FileText className="h-8 w-8 text-blue-500 mb-3" />
                   <h3 className="font-medium text-sm truncate">{doc.title}</h3>
                   <p className="text-xs text-muted-foreground mt-1">
-                    {new Date(doc.updatedAt).toLocaleDateString("el-GR", {
+                    {new Date(doc.updatedAt).toLocaleDateString(undefined, {
                       day: "numeric",
                       month: "short",
                       year: "numeric",

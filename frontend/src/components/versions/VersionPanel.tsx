@@ -3,6 +3,8 @@ import { api } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { X, History, RotateCcw, Plus, Trash2, Eye, EyeOff } from "lucide-react"
+import { toast } from "@/stores/toastStore"
+import { confirmDialog } from "@/stores/confirmStore"
 import { useEditor, EditorContent } from "@tiptap/react"
 import StarterKit from "@tiptap/starter-kit"
 import Underline from "@tiptap/extension-underline"
@@ -81,6 +83,9 @@ export function VersionPanel({ documentId, onClose, onRestore }: VersionPanelPro
       setVersions([version, ...versions])
       setLabelText("")
       setShowLabel(false)
+      toast({ title: "Version saved", variant: "success" })
+    } catch (err) {
+      toast({ title: "Failed to save version", description: (err as Error).message, variant: "destructive" })
     } finally {
       setCreating(false)
     }
@@ -95,20 +100,37 @@ export function VersionPanel({ documentId, onClose, onRestore }: VersionPanelPro
 
   const restoreVersion = async () => {
     if (!selectedVersion) return
+    const ok = await confirmDialog({
+      title: "Restore this version?",
+      description: "The current document content will be replaced with this version.",
+      confirmLabel: "Restore",
+      variant: "default",
+    })
+    if (!ok) return
     setRestoring(true)
     try {
       await api.post(`/documents/${documentId}/versions/${selectedVersion.id}/restore`)
       setSelectedVersion(null)
       onRestore()
+      toast({ title: "Version restored", variant: "success" })
+    } catch (err) {
+      toast({ title: "Failed to restore version", description: (err as Error).message, variant: "destructive" })
     } finally {
       setRestoring(false)
     }
   }
 
   const deleteVersion = async (id: string) => {
-    await api.delete(`/documents/${documentId}/versions/${id}`)
-    setVersions(versions.filter((v) => v.id !== id))
-    if (selectedVersion?.id === id) setSelectedVersion(null)
+    const ok = await confirmDialog({ title: "Delete version", description: "This version will be permanently deleted." })
+    if (!ok) return
+    try {
+      await api.delete(`/documents/${documentId}/versions/${id}`)
+      setVersions(versions.filter((v) => v.id !== id))
+      if (selectedVersion?.id === id) setSelectedVersion(null)
+      toast({ title: "Version deleted", variant: "success" })
+    } catch (err) {
+      toast({ title: "Failed to delete version", description: (err as Error).message, variant: "destructive" })
+    }
   }
 
   // Preview editor for viewing old versions
@@ -175,8 +197,11 @@ export function VersionPanel({ documentId, onClose, onRestore }: VersionPanelPro
           <p className="text-xs text-muted-foreground text-center py-8">Loading...</p>
         ) : versions.length === 0 ? (
           <div className="text-center py-12 space-y-3">
-            <History className="h-10 w-10 text-muted-foreground/40 mx-auto" />
-            <p className="text-sm text-muted-foreground">No versions saved yet</p>
+            <History className="h-10 w-10 text-muted-foreground/30 mx-auto" />
+            <p className="text-sm text-muted-foreground font-medium">No versions saved yet</p>
+            <p className="text-xs text-muted-foreground/60 max-w-[200px] mx-auto">
+              Save snapshots of your document to track changes over time. You can preview and restore any version.
+            </p>
           </div>
         ) : (
           <div className="space-y-1">

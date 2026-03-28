@@ -3,6 +3,7 @@ import type { Editor } from "@tiptap/react"
 import { Button } from "@/components/ui/button"
 import { Download, FileText, FileCode, FileType, Archive } from "lucide-react"
 import { exportAsHTML, exportAsMarkdown, exportAsPDF, exportAllAsZip } from "@/lib/export"
+import { toast } from "@/stores/toastStore"
 
 interface ExportMenuProps {
   editor: Editor
@@ -29,6 +30,7 @@ export function ExportMenu({ editor, title }: ExportMenuProps) {
     try {
       if (format === "zip") {
         await exportAllAsZip()
+        toast({ title: "All documents exported as ZIP", variant: "success" })
       } else {
         const docTitle = title || "Untitled Document"
         if (format === "html") {
@@ -38,9 +40,10 @@ export function ExportMenu({ editor, title }: ExportMenuProps) {
         } else {
           await exportAsPDF(editor, docTitle)
         }
+        toast({ title: `Exported as ${format.toUpperCase()}`, variant: "success" })
       }
     } catch (err) {
-      console.error("Export failed:", err)
+      toast({ title: "Export failed", description: (err as Error).message, variant: "destructive" })
     } finally {
       setExporting(false)
       setOpen(false)

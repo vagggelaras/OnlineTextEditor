@@ -14,10 +14,13 @@ import {
   GripVertical,
 } from "lucide-react";
 import type { Folder, Document } from "@/types/document";
+import { toast } from "@/stores/toastStore";
+import { confirmDialog } from "@/stores/confirmStore";
 
 interface FileTreeProps {
   onOpenDocument: (id: string) => void;
   activeDocId?: string;
+  searchQuery?: string;
 }
 
 // Drag data passed via dataTransfer
@@ -27,7 +30,7 @@ interface DragPayload {
   fromFolderId: string | null;
 }
 
-export function FileTree({ onOpenDocument, activeDocId }: FileTreeProps) {
+export function FileTree({ onOpenDocument, activeDocId, searchQuery = "" }: FileTreeProps) {
   const {
     documents,
     folders,
@@ -209,13 +212,47 @@ export function FileTree({ onOpenDocument, activeDocId }: FileTreeProps) {
     [documents, folders, dropPosition, reorderDocuments, reorderFolders]
   );
 
-  const sortedRootFolders = folders
+  // Search filtering
+  const query = searchQuery.toLowerCase().trim();
+  const folderHasMatch = useCallback((folderId: string): boolean => {
+    if (documents.some((d) => d.folderId === folderId && d.title.toLowerCase().includes(query))) return true;
+    return folders.filter((f) => f.parentId === folderId).some((f) =>
+      f.name.toLowerCase().includes(query) || folderHasMatch(f.id)
+    );
+  }, [documents, folders, query]);
+
+  const filteredFolders = query
+    ? folders.filter((f) => f.name.toLowerCase().includes(query) || folderHasMatch(f.id))
+    : folders;
+  const filteredDocs = query
+    ? documents.filter((d) => d.title.toLowerCase().includes(query))
+    : documents;
+
+  const sortedRootFolders = filteredFolders
     .filter((f) => f.parentId === null)
     .sort((a, b) => a.sortOrder - b.sortOrder);
 
-  const sortedRootDocs = documents
+  const sortedRootDocs = filteredDocs
     .filter((d) => d.folderId === null)
     .sort((a, b) => a.sortOrder - b.sortOrder);
+
+  if (query && sortedRootFolders.length === 0 && sortedRootDocs.length === 0) {
+    return (
+      <div className="py-6 text-center">
+        <p className="text-xs text-muted-foreground">No documents matching "{searchQuery}"</p>
+      </div>
+    );
+  }
+
+  if (!query && folders.length === 0 && documents.length === 0) {
+    return (
+      <div className="py-8 text-center space-y-2">
+        <FileText className="h-8 w-8 text-muted-foreground/30 mx-auto" />
+        <p className="text-xs text-muted-foreground">No documents yet</p>
+        <p className="text-[10px] text-muted-foreground/60">Click "New Document" to get started</p>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -420,7 +457,10 @@ function FolderNode({
             </button>
             <button
               className="p-0.5 rounded hover:bg-muted text-destructive"
-              onClick={() => { if (confirm("Delete this folder and all its contents?")) deleteFolder(folder.id); }}
+              onClick={async () => {
+                const ok = await confirmDialog({ title: "Delete folder", description: "This will permanently delete this folder and all its contents." });
+                if (ok) { await deleteFolder(folder.id); toast({ title: "Folder deleted", variant: "success" }); }
+              }}
               title="Delete"
             >
               <Trash2 className="h-3 w-3" />
@@ -576,7 +616,10 @@ function DocItem({
             </button>
             <button
               className="p-0.5 rounded hover:bg-muted text-destructive"
-              onClick={() => { if (confirm("Delete this document?")) onDelete(); }}
+              onClick={async () => {
+                const ok = await confirmDialog({ title: "Delete document", description: "This document will be permanently deleted." });
+                if (ok) { onDelete(); toast({ title: "Document deleted", variant: "success" }); }
+              }}
             >
               <Trash2 className="h-3 w-3" />
             </button>

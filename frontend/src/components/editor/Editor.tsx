@@ -21,11 +21,12 @@ import * as Y from "yjs"
 import { EditorToolbar } from "./EditorToolbar"
 import { useDocumentStore } from "@/stores/documentStore"
 import { useAuthStore } from "@/stores/authStore"
-import { Wifi, WifiOff, Users, Share2 } from "lucide-react"
+import { Wifi, WifiOff, Users, Share2, Check, Type, GitFork } from "lucide-react"
 import { ChartPanel } from "@/components/charts/ChartPanel"
 import { ShareDialog } from "@/components/share/ShareDialog"
 import { ExportMenu } from "@/components/export/ExportMenu"
 import { VersionPanel } from "@/components/versions/VersionPanel"
+import { GraphEditor } from "@/components/graph/GraphEditor"
 import { Button } from "@/components/ui/button"
 import type { Document } from "@/types/document"
 
@@ -91,6 +92,8 @@ export function Editor({ document: doc }: EditorProps) {
   const [title, setTitle] = useState(doc.title)
   const [connectionStatus, setConnectionStatus] = useState<"connecting" | "connected" | "disconnected">("connecting")
   const [connectedUsers, setConnectedUsers] = useState<{ name: string; color: string }[]>([])
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle")
+  const [activeTab, setActiveTab] = useState<"text" | "graph">("text")
   const [chartPanelOpen, setChartPanelOpen] = useState(false)
   const [versionPanelOpen, setVersionPanelOpen] = useState(false)
   const [shareDialogOpen, setShareDialogOpen] = useState(false)
@@ -218,9 +221,16 @@ export function Editor({ document: doc }: EditorProps) {
   const handleTitleChange = useCallback(
     (newTitle: string) => {
       setTitle(newTitle)
+      setSaveStatus("saving")
       if (titleTimer.current) clearTimeout(titleTimer.current)
-      titleTimer.current = setTimeout(() => {
-        updateDocument(doc.id, { title: newTitle || "Untitled Document" })
+      titleTimer.current = setTimeout(async () => {
+        try {
+          await updateDocument(doc.id, { title: newTitle || "Untitled Document" })
+          setSaveStatus("saved")
+          setTimeout(() => setSaveStatus("idle"), 2000)
+        } catch {
+          setSaveStatus("idle")
+        }
       }, 1000)
     },
     [doc.id, updateDocument]
@@ -235,14 +245,52 @@ export function Editor({ document: doc }: EditorProps) {
 
   return (
     <div className="flex flex-col h-full">
-      <EditorToolbar
-        editor={editor}
-        onToggleCharts={() => setChartPanelOpen(!chartPanelOpen)}
-        chartPanelOpen={chartPanelOpen}
-        onToggleVersions={() => setVersionPanelOpen(!versionPanelOpen)}
-        versionPanelOpen={versionPanelOpen}
-      />
+      {/* Tab bar + toolbar */}
+      <div className="bg-background border-b border-border">
+        <div className="flex items-center">
+          {/* Tabs - centered */}
+          <div className="flex-1 flex justify-center">
+            <div className="flex items-center bg-muted rounded-lg p-0.5 my-1.5">
+              <button
+                onClick={() => setActiveTab("text")}
+                className={`flex items-center gap-1.5 px-4 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                  activeTab === "text"
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <Type className="h-3.5 w-3.5" />
+                Text
+              </button>
+              <button
+                onClick={() => setActiveTab("graph")}
+                className={`flex items-center gap-1.5 px-4 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                  activeTab === "graph"
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <GitFork className="h-3.5 w-3.5" />
+                Graph
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Text editor toolbar (only show in text mode) */}
+      {activeTab === "text" && (
+        <EditorToolbar
+          editor={editor}
+          onToggleCharts={() => setChartPanelOpen(!chartPanelOpen)}
+          chartPanelOpen={chartPanelOpen}
+          onToggleVersions={() => setVersionPanelOpen(!versionPanelOpen)}
+          versionPanelOpen={versionPanelOpen}
+        />
+      )}
+
       <div className="flex flex-1 overflow-hidden">
+        {activeTab === "text" ? (
         <div className="flex-1 overflow-auto bg-muted">
           <div className="max-w-[850px] mx-auto mt-8 mb-8">
             {/* Title + status bar */}
@@ -288,20 +336,30 @@ export function Editor({ document: doc }: EditorProps) {
               </Button>
               {editor && <ExportMenu editor={editor} title={title} />}
 
-              {/* Connection status */}
-              {connectionStatus === "connected" ? (
-                <span className="text-xs text-green-600 flex items-center gap-1">
-                  <Wifi className="h-3 w-3" /> Synced
-                </span>
-              ) : connectionStatus === "connecting" ? (
-                <span className="text-xs text-yellow-600 flex items-center gap-1">
-                  <Wifi className="h-3 w-3" /> Connecting...
-                </span>
-              ) : (
-                <span className="text-xs text-red-500 flex items-center gap-1">
-                  <WifiOff className="h-3 w-3" /> Offline
-                </span>
-              )}
+              {/* Save + Connection status */}
+              <div className="flex items-center gap-2">
+                {saveStatus === "saving" && (
+                  <span className="text-xs text-muted-foreground">Saving...</span>
+                )}
+                {saveStatus === "saved" && (
+                  <span className="text-xs text-green-600 flex items-center gap-1">
+                    <Check className="h-3 w-3" /> Saved
+                  </span>
+                )}
+                {connectionStatus === "connected" ? (
+                  <span className="text-xs text-green-600 flex items-center gap-1">
+                    <Wifi className="h-3 w-3" /> Synced
+                  </span>
+                ) : connectionStatus === "connecting" ? (
+                  <span className="text-xs text-yellow-600 flex items-center gap-1">
+                    <Wifi className="h-3 w-3" /> Connecting...
+                  </span>
+                ) : (
+                  <span className="text-xs text-red-500 flex items-center gap-1">
+                    <WifiOff className="h-3 w-3" /> Offline
+                  </span>
+                )}
+              </div>
             </div>
 
             {/* Editor */}
@@ -310,6 +368,12 @@ export function Editor({ document: doc }: EditorProps) {
             </div>
           </div>
         </div>
+
+        ) : (
+        <div className="flex-1 overflow-hidden">
+          <GraphEditor documentId={doc.id} />
+        </div>
+        )}
 
         {/* Side panels */}
         {chartPanelOpen && (
